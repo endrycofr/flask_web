@@ -39,14 +39,16 @@ class Absensi(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).astimezone())
-
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(pytz.utc))
     def to_dict(self):
+        # Convert timestamp to local timezone (Asia/Jakarta)
+        local_timezone = pytz.timezone('Asia/Jakarta')
+        local_timestamp = self.timestamp.astimezone(local_timezone)
         return {
             'id': self.id,
             'nrp': self.nrp,
             'nama': self.nama,
-            'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
+            'timestamp': local_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
         }
 
 
@@ -134,6 +136,7 @@ def get_absensi():
     try:
         with app.app_context():
             absensi_list = Absensi.query.order_by(Absensi.timestamp.desc()).all()
+        logger.info(f"Fetched {len(absensi_list)} absensi records.")
         return jsonify({
             'message': 'Berhasil mengambil data absensi',
             'total': len(absensi_list),
