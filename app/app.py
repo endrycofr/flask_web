@@ -97,8 +97,6 @@ def health_check():
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
-
-@app.route('/absensi', methods=['POST'])
 def create_absensi():
     """Add a new attendance record."""
     try:
@@ -109,14 +107,17 @@ def create_absensi():
         new_absensi = Absensi(nrp=data['nrp'], nama=data['nama'])
 
         # Ensure the session is active before committing
-        with app.app_context():
-            db.session.add(new_absensi)
-            db.session.commit()
+        db.session.add(new_absensi)
+        db.session.commit()
+
+        if new_absensi.id is None:
+            raise Exception("Failed to create new Absensi, ID is not set.")
 
         return jsonify({
             'message': 'Absensi berhasil ditambahkan', 
             'data': new_absensi.to_dict()
         }), 201
+
     except SQLAlchemyError as e:
         db.session.rollback()  # Rollback on error
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
@@ -130,7 +131,7 @@ def create_absensi():
             'message': 'Terjadi kesalahan tidak terduga', 
             'error': str(e)
         }), 500
-
+    
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
     """Get all attendance records."""
