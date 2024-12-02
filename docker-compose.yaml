@@ -35,14 +35,16 @@ services:
       - app
 
   prometheus:
-    image: prometheus/prometheus:latest
-    container_name: prometheus
+    build:
+      context: ./prometheus
+      platforms:
+        - linux/arm64
     volumes:
-      - ./prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     ports:
       - "9090:9090"
-    depends_on:
-      - app
 
   grafana:
     image: grafana/grafana:latest
