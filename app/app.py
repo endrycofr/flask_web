@@ -97,7 +97,6 @@ def health_check():
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
-
 @app.route('/absensi', methods=['POST'])
 def create_absensi():
     """Add a new attendance record."""
@@ -106,10 +105,12 @@ def create_absensi():
         if not data or 'nrp' not in data or 'nama' not in data:
             return jsonify({'message': 'Input tidak valid'}), 400
 
+        # Create the new Absensi record
         new_absensi = Absensi(nrp=data['nrp'], nama=data['nama'])
-        with app.app_context():
-            db.session.add(new_absensi)
-            db.session.commit()
+        
+        # Use db.session to manage the transaction
+        db.session.add(new_absensi)
+        db.session.commit()
 
         return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 201
     except SQLAlchemyError as e:
@@ -119,8 +120,6 @@ def create_absensi():
     except Exception as e:
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
-
 
 
 @app.route('/absensi', methods=['GET'])
