@@ -105,13 +105,14 @@ def create_absensi():
         if not data or 'nrp' not in data or 'nama' not in data:
             return jsonify({'message': 'Input tidak valid'}), 400
 
+        # Create the new Absensi record
         new_absensi = Absensi(nrp=data['nrp'], nama=data['nama'])
+        
+        # Use db.session to manage the transaction
+        db.session.add(new_absensi)
+        db.session.commit()
 
-        with app.app_context():
-            db.session.add(new_absensi)  # Tambahkan objek ke sesi
-            db.session.commit()  # Commit perubahan ke DB
-
-        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 201
+        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
@@ -119,6 +120,7 @@ def create_absensi():
     except Exception as e:
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
+
 
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
@@ -151,44 +153,27 @@ def update_absensi(id):
     """Update an existing attendance record."""
     try:
         data = request.json
-        with app.app_context():
-            absensi = Absensi.query.get(id)
-            if not absensi:
-                return jsonify({
-                    'message': 'Absensi tidak ditemukan', 
-                    'error': f'Tidak ada data dengan ID {id}'
-                }), 404
+        # Cari absensi berdasarkan id
+        absensi = Absensi.query.get(id)
+        if not absensi:
+            return jsonify({'message': 'Absensi tidak ditemukan'}), 404
 
-            # Validate input
-            if not data or ('nrp' not in data and 'nama' not in data):
-                return jsonify({
-                    'message': 'Input tidak valid', 
-                    'error': 'NRP atau Nama harus diisi'
-                }), 400
+        # Perbarui field berdasarkan data yang diberikan
+        absensi.nrp = data.get('nrp', absensi.nrp)
+        absensi.nama = data.get('nama', absensi.nama)
 
-            # Update fields if provided
-            absensi.nrp = data.get('nrp', absensi.nrp)
-            absensi.nama = data.get('nama', absensi.nama)
-            
+        # Commit perubahan ke database
+        with app.app_context():  # Pastikan commit dilakukan dalam konteks aplikasi
             db.session.commit()
 
-        return jsonify({
-            'message': 'Absensi berhasil diperbarui', 
-            'data': absensi.to_dict()
-        }), 200
+        return jsonify({'message': 'Absensi berhasil diperbarui', 'data': absensi.to_dict()}), 200
     except SQLAlchemyError as e:
-        db.session.rollback()
+        db.session.rollback()  # Rollback jika terjadi kesalahan
         logger.error(f"SQLAlchemy error during update_absensi: {e}")
-        return jsonify({
-            'message': 'Gagal memperbarui absensi', 
-            'error': str(e)
-        }), 500
+        return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during update_absensi: {e}")
-        return jsonify({
-            'message': 'Terjadi kesalahan tidak terduga', 
-            'error': str(e)
-        }), 500
+        return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
 
 @app.route('/absensi/<int:id>', methods=['DELETE'])
