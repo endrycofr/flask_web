@@ -2,7 +2,6 @@ import os
 import time
 import logging
 from flask import Flask, request, jsonify, render_template
-from flask_restful import Resource, Api
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from prometheus_flask_exporter import PrometheusMetrics
@@ -20,7 +19,7 @@ metrics = PrometheusMetrics(app)
 # Database Configuration
 db_uri = os.getenv(
     'DB_URI',
-    'mysql+mysqlconnector://flask_user:password@127.0.0.1/flask_app_db'  # Local default for testing
+    'mysql+mysqlconnector://flask_user:password@mysql/flask_app_db'  # 'mysql' is the service name in docker-compose
 )
 app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -52,9 +51,10 @@ def wait_for_database(max_retries=5, delay=5):
     """Wait for the database to be available."""
     for attempt in range(1, max_retries + 1):
         try:
-            with db.engine.connect() as connection:
-                logger.info("Database connected successfully.")
-                return True
+            with app.app_context():
+                with db.engine.connect() as connection:
+                    logger.info("Database connected successfully.")
+                    return True
         except Exception as e:
             logger.warning(f"Database connection attempt {attempt} failed: {e}")
             time.sleep(delay)
@@ -66,7 +66,8 @@ def wait_for_database(max_retries=5, delay=5):
 def create_tables():
     """Create database tables if not already present."""
     try:
-        db.create_all()
+        with app.app_context():
+            db.create_all()
         logger.info("Database tables created successfully.")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
@@ -83,7 +84,8 @@ def index():
 def health_check():
     """Health check to monitor the app status."""
     try:
-        db.session.execute('SELECT 1')
+        with app.app_context():
+            db.session.execute('SELECT 1')
         return jsonify({'status': 'healthy', 'app_number': os.getenv('APP_NUMBER', '1')}), 200
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -99,8 +101,9 @@ def create_absensi():
             return jsonify({'message': 'Input tidak valid'}), 400
 
         new_absensi = Absensi(nrp=data['nrp'], nama=data['nama'])
-        db.session.add(new_absensi)
-        db.session.commit()
+        with app.app_context():
+            db.session.add(new_absensi)
+            db.session.commit()
 
         return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 201
     except SQLAlchemyError as e:
@@ -116,7 +119,8 @@ def create_absensi():
 def get_absensi():
     """Get all attendance records."""
     try:
-        absensi_list = Absensi.query.all()
+        with app.app_context():
+            absensi_list = Absensi.query.all()
         return jsonify({'data': [absensi.to_dict() for absensi in absensi_list]}), 200
     except SQLAlchemyError as e:
         logger.error(f"SQLAlchemy error during get_absensi: {e}")
@@ -137,7 +141,8 @@ def update_absensi(id):
 
         absensi.nrp = data.get('nrp', absensi.nrp)
         absensi.nama = data.get('nama', absensi.nama)
-        db.session.commit()
+        with app.app_context():
+            db.session.commit()
 
         return jsonify({'message': 'Absensi berhasil diperbarui', 'data': absensi.to_dict()}), 200
     except SQLAlchemyError as e:
@@ -157,8 +162,10 @@ def delete_absensi(id):
         if not absensi:
             return jsonify({'message': 'Absensi tidak ditemukan'}), 404
 
-        db.session.delete(absensi)
-        db.session.commit()
+        with app.app_context():
+            db.session.delete(absensi)
+            db.session.commit()
+
         return jsonify({'message': 'Absensi berhasil dihapus'}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
