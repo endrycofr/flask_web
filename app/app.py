@@ -4,6 +4,7 @@ import logging
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
+import pytz  # Add this import for timezone handling
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -29,6 +30,9 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 
 db = SQLAlchemy(app)
+
+# Specify your local timezone (e.g., 'Asia/Jakarta' for Indonesia)
+LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta')
 
 # Database Model
 class Absensi(db.Model):

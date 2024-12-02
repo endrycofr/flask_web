@@ -6,3 +6,4 @@ prometheus-flask-exporter
 MarkupSafe
 prometheus_client
 flask-restful
+pytz
