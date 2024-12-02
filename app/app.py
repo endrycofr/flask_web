@@ -163,10 +163,12 @@ def update_absensi(id):
         absensi.nama = data.get('nama', absensi.nama)
 
         # Commit perubahan ke database
-        with app.app_context():  # Pastikan commit dilakukan dalam konteks aplikasi
-            db.session.commit()
+        db.session.commit()
 
-        return jsonify({'message': 'Absensi berhasil diperbarui', 'data': absensi.to_dict()}), 200
+        # Fetch the updated record
+        updated_absensi = Absensi.query.get(id)
+        
+        return jsonify({'message': 'Absensi berhasil diperbarui', 'data': updated_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()  # Rollback jika terjadi kesalahan
         logger.error(f"SQLAlchemy error during update_absensi: {e}")
