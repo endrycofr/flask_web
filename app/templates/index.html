@@ -124,6 +124,17 @@
     <script>
       const apiUrl = "/absensi";
 
+      // Improved error handling function
+      function handleApiError(error) {
+        const errorMessage = error.response
+          ? error.response.data.message ||
+            error.response.data.error ||
+            "Unknown Error"
+          : error.message;
+        console.error("API Error:", error);
+        alert(`Error: ${errorMessage}`);
+      }
+
       // Add Absensi
       async function addAbsensi() {
         const nrp = document.getElementById("nrp").value;
@@ -131,11 +142,13 @@
 
         try {
           const response = await axios.post(apiUrl, { nrp, nama });
-          alert(
-            "Absensi berhasil ditambahkan: " + JSON.stringify(response.data)
-          );
+          alert("Absensi berhasil ditambahkan");
+          // Optional: Reset form or refresh data
+          document.getElementById("nrp").value = "";
+          document.getElementById("nama").value = "";
+          getAbsensi(); // Refresh the list
         } catch (error) {
-          alert("Error: " + error.response.data.message);
+          handleApiError(error);
         }
       }
 
@@ -149,7 +162,7 @@
             2
           );
         } catch (error) {
-          alert("Error: " + error.response.data.message);
+          handleApiError(error);
         }
       }
 
@@ -159,13 +172,26 @@
         const nrp = document.getElementById("update-nrp").value;
         const nama = document.getElementById("update-nama").value;
 
+        // Only send fields that are not empty
+        const updateData = {};
+        if (nrp) updateData.nrp = nrp;
+        if (nama) updateData.nama = nama;
+
+        if (Object.keys(updateData).length === 0) {
+          alert("Minimal satu field (NRP atau Nama) harus diisi");
+          return;
+        }
+
         try {
-          const response = await axios.put(`${apiUrl}/${id}`, { nrp, nama });
-          alert(
-            "Absensi berhasil diperbarui: " + JSON.stringify(response.data)
-          );
+          const response = await axios.put(`${apiUrl}/${id}`, updateData);
+          alert("Absensi berhasil diperbarui");
+          // Reset form fields
+          document.getElementById("update-id").value = "";
+          document.getElementById("update-nrp").value = "";
+          document.getElementById("update-nama").value = "";
+          getAbsensi(); // Refresh the list
         } catch (error) {
-          alert("Error: " + error.response.data.message);
+          handleApiError(error);
         }
       }
 
@@ -175,11 +201,17 @@
 
         try {
           const response = await axios.delete(`${apiUrl}/${id}`);
-          alert("Absensi berhasil dihapus: " + JSON.stringify(response.data));
+          alert("Absensi berhasil dihapus");
+          // Reset delete form field
+          document.getElementById("delete-id").value = "";
+          getAbsensi(); // Refresh the list
         } catch (error) {
-          alert("Error: " + error.response.data.message);
+          handleApiError(error);
         }
       }
+
+      // Initial load of data
+      document.addEventListener("DOMContentLoaded", getAbsensi);
     </script>
   </body>
 </html>
