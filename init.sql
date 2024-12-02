@@ -9,6 +9,3 @@ CREATE TABLE IF NOT EXISTS absensi (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Optionally, you can insert some initial data
-INSERT INTO absensi (nrp, nama) VALUES ('123456', 'John Doe');
-INSERT INTO absensi (nrp, nama) VALUES ('654321', 'Jane Smith');
