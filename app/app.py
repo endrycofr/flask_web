@@ -4,6 +4,7 @@ import logging
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from pytz import timezone
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -35,16 +36,18 @@ class Absensi(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now)
 
     def to_dict(self):
+        # Convert timestamp to your local timezone and format
+        local_tz = timezone('Asia/Jakarta')  # Replace with your timezone if necessary
+        local_timestamp = self.timestamp.astimezone(local_tz)
         return {
             'id': self.id,
             'nrp': self.nrp,
             'nama': self.nama,
-            'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            'timestamp': local_timestamp.strftime('%Y-%m-%d %H:%M:%S')
         }
-
 
 # Wait for Database Connection
 def wait_for_database(max_retries=5, delay=5):
@@ -61,7 +64,6 @@ def wait_for_database(max_retries=5, delay=5):
     logger.error("Max retries reached. Cannot connect to the database.")
     return False
 
-
 # Create Tables if Needed
 def create_tables():
     """Create database tables if not already present."""
@@ -73,12 +75,10 @@ def create_tables():
         logger.error(f"Error creating database tables: {e}")
         raise
 
-
 # Routes
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -90,7 +90,6 @@ def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
-
 
 @app.route('/absensi', methods=['POST'])
 def create_absensi():
@@ -114,7 +113,6 @@ def create_absensi():
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
-
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
     """Get all attendance records."""
@@ -128,7 +126,6 @@ def get_absensi():
     except Exception as e:
         logger.error(f"Unexpected error during get_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
 
 @app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
@@ -153,7 +150,6 @@ def update_absensi(id):
         logger.error(f"Unexpected error during update_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
-
 @app.route('/absensi/<int:id>', methods=['DELETE'])
 def delete_absensi(id):
     """Delete an attendance record."""
@@ -174,7 +170,6 @@ def delete_absensi(id):
     except Exception as e:
         logger.error(f"Unexpected error during delete_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
 
 # Main Application
 if __name__ == '__main__':
