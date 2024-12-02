@@ -229,22 +229,15 @@ from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import pytz
-from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
-from prometheus_client import Counter, Histogram
+from prometheus_flask_exporter import PrometheusMetrics
+from metrics import REQUEST_COUNT, REQUEST_LATENCY, RESPONSE_TIME, THROUGHPUT, REQUEST_DELAY
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
-# Prometheus Metrics Initialization
-metrics = PrometheusMetrics(app)
-
-# Create custom Prometheus metrics
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP Requests', ['method', 'endpoint'])
-REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'Request duration histogram', ['method', 'endpoint'])
 
 # Database Configuration
 db_uri = os.getenv(
@@ -281,34 +274,6 @@ class Absensi(db.Model):
         }
 
 
-# Wait for Database Connection
-def wait_for_database(max_retries=5, delay=5):
-    """Wait for the database to be available."""
-    for attempt in range(1, max_retries + 1):
-        try:
-            with app.app_context():
-                with db.engine.connect() as connection:
-                    logger.info("Database connected successfully.")
-                    return True
-        except Exception as e:
-            logger.warning(f"Database connection attempt {attempt} failed: {e}")
-            time.sleep(delay)
-    logger.error("Max retries reached. Cannot connect to the database.")
-    return False
-
-
-# Create Tables if Needed
-def create_tables():
-    """Create database tables if not already present."""
-    try:
-        with app.app_context():
-            db.create_all()
-        logger.info("Database tables created successfully.")
-    except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
-        raise
-
-
 # Routes
 @app.route('/')
 def index():
@@ -326,6 +291,7 @@ def health_check():
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
+
 @app.route('/absensi', methods=['POST'])
 def create_absensi():
     """Add a new attendance record."""
@@ -342,10 +308,11 @@ def create_absensi():
         db.session.add(new_absensi)
         db.session.commit()
 
-        # Record the request latency in Prometheus
+        # Record the request latency and response time in Prometheus
         duration = time.time() - start_time
         REQUEST_COUNT.labels(method='POST', endpoint='/absensi').inc()
         REQUEST_LATENCY.labels(method='POST', endpoint='/absensi').observe(duration)
+        RESPONSE_TIME.labels(method='POST', endpoint='/absensi').observe(duration)
 
         return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
@@ -370,6 +337,7 @@ def get_absensi():
         duration = time.time() - start_time
         REQUEST_COUNT.labels(method='GET', endpoint='/absensi').inc()
         REQUEST_LATENCY.labels(method='GET', endpoint='/absensi').observe(duration)
+        RESPONSE_TIME.labels(method='GET', endpoint='/absensi').observe(duration)
 
         return jsonify({
             'message': 'Berhasil mengambil data absensi',
@@ -412,6 +380,7 @@ def update_absensi(id):
         duration = time.time() - start_time
         REQUEST_COUNT.labels(method='PUT', endpoint='/absensi').inc()
         REQUEST_LATENCY.labels(method='PUT', endpoint='/absensi').observe(duration)
+        RESPONSE_TIME.labels(method='PUT', endpoint='/absensi').observe(duration)
 
         # Fetch the updated record
         updated_absensi = Absensi.query.get(id)
@@ -446,11 +415,9 @@ def delete_absensi(id):
         duration = time.time() - start_time
         REQUEST_COUNT.labels(method='DELETE', endpoint='/absensi').inc()
         REQUEST_LATENCY.labels(method='DELETE', endpoint='/absensi').observe(duration)
+        RESPONSE_TIME.labels(method='DELETE', endpoint='/absensi').observe(duration)
 
-        return jsonify({
-            'message': 'Absensi berhasil dihapus',
-            'deleted_id': id
-        }), 200
+        return jsonify({'message': 'Absensi berhasil dihapus'}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during delete_absensi: {e}")
@@ -461,9 +428,5 @@ def delete_absensi(id):
 
 
 if __name__ == '__main__':
-    # Ensure the database is available
-    if wait_for_database():
-        create_tables()
-        app.run(debug=True, host='0.0.0.0', port=5000)
-    else:
-        logger.error("Database initialization failed. Exiting application.")
+    metrics = PrometheusMetrics(app)
+    app.run(host='0.0.0.0', port=5000, debug=True)
