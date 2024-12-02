@@ -105,14 +105,13 @@ def create_absensi():
         if not data or 'nrp' not in data or 'nama' not in data:
             return jsonify({'message': 'Input tidak valid'}), 400
 
-        # Create the new Absensi record
         new_absensi = Absensi(nrp=data['nrp'], nama=data['nama'])
-        
-        # Use db.session to manage the transaction
-        db.session.add(new_absensi)
-        db.session.commit()
 
-        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 200
+        with app.app_context():
+            db.session.add(new_absensi)  # Tambahkan objek ke sesi
+            db.session.commit()  # Commit perubahan ke DB
+
+        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 201
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
@@ -120,7 +119,6 @@ def create_absensi():
     except Exception as e:
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
 
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
