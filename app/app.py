@@ -1,12 +1,13 @@
-import os
-import time
-import logging
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import os
+import time
 import pytz
+import logging
+import psutil
 from prometheus_flask_exporter import PrometheusMetrics
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Histogram, Gauge
 from sqlalchemy.exc import SQLAlchemyError
 
 # Logging Configuration
@@ -19,7 +20,7 @@ app = Flask(__name__)
 metrics = PrometheusMetrics(app)
 metrics.info("app_info", "Application Info", version="1.0.0")
 
-# Custom Prometheus Metrics
+# Prometheus Custom Metrics
 REQUEST_COUNT = Counter(
     "flask_request_operations_total",
     "Total number of requests by endpoint, method, and HTTP status",
@@ -30,9 +31,18 @@ REQUEST_LATENCY = Histogram(
     "Request latency in seconds",
     ["endpoint", "method"],
 )
-DB_QUERY_LATENCY = Histogram(
-    "db_query_latency_seconds", "Database query latency in seconds", ["operation"]
+ERROR_COUNT = Counter(
+    "flask_request_errors_total",
+    "Total number of errors by endpoint and HTTP status",
+    ["endpoint", "http_status"],
 )
+LATENCY_PERCENTILES = Histogram(
+    "flask_request_duration_seconds",
+    "Request duration distribution",
+    buckets=[0.1, 0.25, 0.5, 0.75, 1, 2, 5, 10],
+)
+CPU_USAGE = Gauge("cpu_usage_percent", "CPU usage percentage")
+MEMORY_USAGE = Gauge("memory_usage_percent", "Memory usage percentage")
 
 # Database Configuration
 db_uri = os.getenv(
@@ -68,49 +78,53 @@ class Absensi(db.Model):
         }
 
 
-# Monitor Function for Requests
-def monitor_request(endpoint):
-    """Decorator to measure request count and latency."""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            method = request.method
-            start_time = time.time()
-            try:
-                response = func(*args, **kwargs)
-                status_code = response.status_code
-            except Exception as e:
-                status_code = 500
-                raise e
-            finally:
-                latency = time.time() - start_time
-                REQUEST_COUNT.labels(endpoint=endpoint, method=method, http_status=status_code).inc()
-                REQUEST_LATENCY.labels(endpoint=endpoint, method=method).observe(latency)
-            return response
-        return wrapper
-    return decorator
+# Monitoring Middleware
+@app.before_request
+def before_request():
+    request.start_time = time.time()
 
 
-# Monitor Function for Database Operations
-def monitor_db(operation):
-    """Decorator to measure database query latency."""
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            start_time = time.time()
-            try:
-                return func(*args, **kwargs)
-            finally:
-                latency = time.time() - start_time
-                DB_QUERY_LATENCY.labels(operation=operation).observe(latency)
-        return wrapper
-    return decorator
+@app.after_request
+def after_request(response):
+    if hasattr(request, "start_time"):
+        latency = time.time() - request.start_time
+        REQUEST_LATENCY.labels(endpoint=request.endpoint, method=request.method).observe(latency)
+        LATENCY_PERCENTILES.observe(latency)
+        REQUEST_COUNT.labels(endpoint=request.endpoint, method=request.method, http_status=response.status_code).inc()
+
+    if response.status_code >= 400:
+        ERROR_COUNT.labels(endpoint=request.endpoint, http_status=response.status_code).inc()
+
+    CPU_USAGE.set(psutil.cpu_percent(interval=0.1))
+    MEMORY_USAGE.set(psutil.virtual_memory().percent)
+
+    return response
 
 
-# Database Utility Functions
-@monitor_db("create_tables")
+# Wait for Database Connection
+def wait_for_database(max_retries=5, delay=5):
+    for attempt in range(1, max_retries + 1):
+        try:
+            with app.app_context():
+                with db.engine.connect() as connection:
+                    logger.info("Database connected successfully.")
+                    return True
+        except Exception as e:
+            logger.warning(f"Database connection attempt {attempt} failed: {e}")
+            time.sleep(delay)
+    logger.error("Max retries reached. Cannot connect to the database.")
+    return False
+
+
+# Create Tables if Needed
 def create_tables():
-    """Create database tables if not already present."""
-    with app.app_context():
-        db.create_all()
+    try:
+        with app.app_context():
+            db.create_all()
+        logger.info("Database tables created successfully.")
+    except Exception as e:
+        logger.error(f"Error creating database tables: {e}")
+        raise
 
 
 # Routes
@@ -120,9 +134,7 @@ def index():
 
 
 @app.route("/health", methods=["GET"])
-@monitor_request("health_check")
 def health_check():
-    """Health check to monitor the app status."""
     try:
         with app.app_context():
             db.session.execute("SELECT 1")
@@ -133,22 +145,16 @@ def health_check():
 
 
 @app.route("/absensi", methods=["POST"])
-@monitor_request("create_absensi")
 def create_absensi():
-    """Add a new attendance record."""
     try:
         data = request.json
         if not data or "nrp" not in data or "nama" not in data:
             return jsonify({"message": "Input tidak valid"}), 400
 
-        @monitor_db("insert_absensi")
-        def insert_absensi(data):
-            new_absensi = Absensi(nrp=data["nrp"], nama=data["nama"])
-            db.session.add(new_absensi)
-            db.session.commit()
-            return new_absensi
+        new_absensi = Absensi(nrp=data["nrp"], nama=data["nama"])
+        db.session.add(new_absensi)
+        db.session.commit()
 
-        new_absensi = insert_absensi(data)
         return jsonify({"message": "Absensi berhasil ditambahkan", "data": new_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -160,15 +166,9 @@ def create_absensi():
 
 
 @app.route("/absensi", methods=["GET"])
-@monitor_request("get_absensi")
 def get_absensi():
-    """Get all attendance records."""
     try:
-        @monitor_db("fetch_absensi")
-        def fetch_absensi():
-            return Absensi.query.order_by(Absensi.timestamp.desc()).all()
-
-        absensi_list = fetch_absensi()
+        absensi_list = Absensi.query.order_by(Absensi.timestamp.desc()).all()
         return jsonify(
             {
                 "message": "Berhasil mengambil data absensi",
@@ -184,10 +184,8 @@ def get_absensi():
         return jsonify({"message": "Terjadi kesalahan tidak terduga", "error": str(e)}), 500
 
 
-@app.route("/absensi/<int:id>", methods=["PUT"])
-@monitor_request("update_absensi")
+@app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
-    """Update an existing attendance record."""
     try:
         data = request.json
         absensi = Absensi.query.get(id)
@@ -197,6 +195,7 @@ def update_absensi(id):
         absensi.nrp = data.get('nrp', absensi.nrp)
         absensi.nama = data.get('nama', absensi.nama)
         db.session.commit()
+
         return jsonify({'message': 'Absensi berhasil diperbarui', 'data': absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -208,9 +207,7 @@ def update_absensi(id):
 
 
 @app.route("/absensi/<int:id>", methods=["DELETE"])
-@monitor_request("delete_absensi")
 def delete_absensi(id):
-    """Delete an attendance record."""
     try:
         absensi = Absensi.query.get(id)
         if not absensi:
@@ -218,6 +215,7 @@ def delete_absensi(id):
 
         db.session.delete(absensi)
         db.session.commit()
+
         return jsonify({"message": "Absensi berhasil dihapus", "deleted_id": id}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
@@ -228,8 +226,10 @@ def delete_absensi(id):
         return jsonify({"message": "An unexpected error occurred", "error": str(e)}), 500
 
 
-# Main Application
 if __name__ == "__main__":
-    with app.app_context():
+    if wait_for_database():
         create_tables()
-    app.run(host="0.0.0.0", port=5000)
+        app.run(host="0.0.0.0", port=5000)
+    else:
+        logger.critical("Tidak dapat terhubung ke database. Aplikasi berhenti.")
+        exit(1)
