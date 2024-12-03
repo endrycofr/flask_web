@@ -7,6 +7,7 @@ from datetime import datetime
 import pytz
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
+from prometheus_client import Counter, Histogram
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,6 +17,19 @@ app = Flask(__name__)
 
 # Prometheus Metrics Initialization
 metrics = PrometheusMetrics(app)
+
+# Create custom Prometheus metrics for each HTTP method
+REQUEST_COUNT = Counter(
+    'flask_http_request_count', 
+    'Total count of HTTP requests by method', 
+    ['method', 'endpoint', 'status']
+)
+
+REQUEST_DURATION = Histogram(
+    'flask_http_request_duration_seconds',
+    'Histogram of request duration by HTTP method',
+    ['method', 'endpoint']
+)
 
 # Database Configuration
 db_uri = os.getenv(
@@ -76,6 +90,22 @@ def create_tables():
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
         raise
+
+# Request Hooks for Prometheus Metrics
+@app.before_request
+def before_request():
+    """Start measuring request duration."""
+    request.start_time = time.time()
+
+@app.after_request
+def after_request(response):
+    """Record metrics after request processing."""
+    # Calculate request duration
+    duration = time.time() - request.start_time
+    # Record the request count and duration for the specific method and endpoint
+    REQUEST_COUNT.labels(method=request.method, endpoint=request.path, status=response.status_code).inc()
+    REQUEST_DURATION.labels(method=request.method, endpoint=request.path).observe(duration)
+    return response
 
 # Routes
 @app.route('/')
@@ -194,10 +224,9 @@ def delete_absensi(id):
     except Exception as e:
         logger.error(f"Unexpected error during delete_absensi: {e}")
         return jsonify({
-            'message': 'Terjadi kesalahan tidak terduga', 
+            'message': 'An unexpected error occurred', 
             'error': str(e)
         }), 500
-
 
 # Main Application
 if __name__ == '__main__':
