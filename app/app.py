@@ -224,24 +224,27 @@
 import os
 import time
 import logging
-import json
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, g
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import pytz
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_flask_exporter import PrometheusMetrics
 from metrics import (
-    ACTIVE_REQUESTS, COMPLETED_REQUESTS, REQUEST_DURATION, 
-    EXCEPTIONS, HTTP_REQUESTS, DATABASE_OPERATIONS, 
-    REQUEST_SIZE, RESPONSE_SIZE
+    DATABASE_OPERATIONS,
+    EXCEPTIONS,
+    record_request_start, 
+    record_request_end, 
+    record_event_processing,
+    record_exception,
+    record_database_operation
 )
-
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app)
 
 # Database Configuration
 db_uri = os.getenv(
@@ -256,7 +259,6 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 
 db = SQLAlchemy(app)
-metrics = PrometheusMetrics(app)
 
 # Specify your local timezone (e.g., 'Asia/Jakarta' for Indonesia)
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta')
@@ -278,31 +280,24 @@ class Absensi(db.Model):
             'timestamp': local_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
         }
 
-# Custom metrics middleware
+# Middleware for tracking request metrics
 @app.before_request
 def before_request():
-    ACTIVE_REQUESTS.inc()
-    request.start_time = time.time()
-    request.request_size = len(request.data)
-    REQUEST_SIZE.observe(request.request_size)
+    # Record the start time and initial request metrics
+    g.request_start_time = record_request_start(
+        method=request.method, 
+        endpoint=request.endpoint or request.path
+    )
 
 @app.after_request
 def after_request(response):
-    ACTIVE_REQUESTS.dec()
-    COMPLETED_REQUESTS.inc()
-    
-    request_duration = time.time() - request.start_time
-    REQUEST_DURATION.observe(request_duration)
-    
-    response_size = len(response.data)
-    RESPONSE_SIZE.observe(response_size)
-    
-    HTTP_REQUESTS.labels(
+    # Record the end of request with metrics
+    record_request_end(
         method=request.method, 
-        endpoint=request.path, 
-        status=response.status_code
-    ).inc()
-    
+        endpoint=request.endpoint or request.path, 
+        start_time=g.request_start_time, 
+        status_code=response.status_code
+    )
     return response
 
 # Routes
@@ -313,25 +308,49 @@ def index():
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check to monitor the app status."""
+    start_time = time.time()
     try:
         with app.app_context():
             db.session.execute('SELECT 1')
-        return jsonify({'status': 'healthy', 'app_number': os.getenv('APP_NUMBER', '1')}), 200
+        
+        # Record successful health check event
+        record_event_processing(
+            event_type='health_check', 
+            status='success', 
+            duration=time.time() - start_time
+        )
+        
+        return jsonify({
+            'status': 'healthy', 
+            'app_number': os.getenv('APP_NUMBER', '1')
+        }), 200
     except Exception as e:
+        # Record failed health check event
+        record_event_processing(
+            event_type='health_check', 
+            status='failure', 
+            duration=time.time() - start_time
+        )
+        
         logger.error(f"Health check failed: {e}")
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
-        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+        return jsonify({
+            'status': 'unhealthy', 
+            'error': str(e)
+        }), 500
 
 @app.route('/absensi', methods=['POST'])
 def create_absensi():
     """Add a new attendance record."""
+    start_time = time.time()
     try:
         data = request.json
         if not data or 'nrp' not in data or 'nama' not in data:
+            # Record validation failure event
+            record_event_processing(
+                event_type='absensi_create', 
+                status='validation_failed', 
+                duration=time.time() - start_time
+            )
             return jsonify({'message': 'Input tidak valid'}), 400
 
         # Create the new Absensi record
@@ -341,27 +360,46 @@ def create_absensi():
         db.session.add(new_absensi)
         db.session.commit()
         
-        DATABASE_OPERATIONS.labels(operation_type='create', status='success').inc()
+        # Record successful creation event
+        record_event_processing(
+            event_type='absensi_create', 
+            status='success', 
+            duration=time.time() - start_time
+        )
 
-        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 200
+        return jsonify({
+            'message': 'Absensi berhasil ditambahkan', 
+            'data': new_absensi.to_dict()
+        }), 200
     except SQLAlchemyError as e:
         db.session.rollback()
+        
+        # Record database error event
+        record_event_processing(
+            event_type='absensi_create', 
+            status='database_error', 
+            duration=time.time() - start_time
+        )
+        
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
-        DATABASE_OPERATIONS.labels(operation_type='create', status='failure').inc()
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
-        return jsonify({'message': 'Gagal menambahkan absensi', 'error': str(e)}), 500
+        return jsonify({
+            'message': 'Gagal menambahkan absensi', 
+            'error': str(e)
+        }), 500
     except Exception as e:
+        # Record unexpected error event
+        record_event_processing(
+            event_type='absensi_create', 
+            status='unexpected_error', 
+            duration=time.time() - start_time
+        )
+        
         logger.error(f"Unexpected error during create_absensi: {e}")
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
-        return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
+        return jsonify({
+            'message': 'An unexpected error occurred', 
+            'error': str(e)
+        }), 500
+
 
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
