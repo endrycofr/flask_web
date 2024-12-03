@@ -17,6 +17,17 @@ app = Flask(__name__)
 # Prometheus Metrics Initialization
 metrics = PrometheusMetrics(app)
 
+# Define Prometheus Metrics
+REQUEST_COUNT = metrics.counter(
+    'request_count', 'Total request count',
+    ['method', 'endpoint', 'status']
+)
+
+REQUEST_DURATION = metrics.histogram(
+    'request_duration_seconds', 'Histogram of request duration',
+    ['method', 'endpoint']
+)
+
 # Database Configuration
 db_uri = os.getenv(
     'DB_URI',
@@ -219,7 +230,8 @@ def delete_absensi(id):
 if __name__ == '__main__':
     if wait_for_database():
         create_tables()
-        app.run(host='0.0.0.0', port=5000)
+        app.run(host='0.0.0.0', port=5000, debug=True)
+
     else:
         logger.critical("Tidak dapat terhubung ke database. Aplikasi berhenti.")
         exit(1)
