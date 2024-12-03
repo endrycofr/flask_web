@@ -9,3 +9,5 @@ flask-restful
 pytz
 requests
 psutil
+marshmallow
+python-dotenv
