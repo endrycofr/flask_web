@@ -8,3 +8,4 @@ prometheus_client
 flask-restful
 pytz
 requests
+psutil
