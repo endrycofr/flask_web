@@ -3,8 +3,8 @@ import time
 import logging
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timezone
-import pytz  # Add this import for timezone handling
+from datetime import datetime
+import pytz
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -40,17 +40,16 @@ class Absensi(db.Model):
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
     timestamp = db.Column(db.DateTime, default=lambda: datetime.now(pytz.utc))
+    
     def to_dict(self):
         # Convert timestamp to local timezone (Asia/Jakarta)
-        local_timezone = pytz.timezone('Asia/Jakarta')
-        local_timestamp = self.timestamp.astimezone(local_timezone)
+        local_timestamp = self.timestamp.astimezone(LOCAL_TIMEZONE)
         return {
             'id': self.id,
             'nrp': self.nrp,
             'nama': self.nama,
             'timestamp': local_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
         }
-
 
 # Wait for Database Connection
 def wait_for_database(max_retries=5, delay=5):
@@ -67,7 +66,6 @@ def wait_for_database(max_retries=5, delay=5):
     logger.error("Max retries reached. Cannot connect to the database.")
     return False
 
-
 # Create Tables if Needed
 def create_tables():
     """Create database tables if not already present."""
@@ -79,12 +77,10 @@ def create_tables():
         logger.error(f"Error creating database tables: {e}")
         raise
 
-
 # Routes
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -121,7 +117,6 @@ def create_absensi():
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
-
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
     """Get all attendance records."""
@@ -136,17 +131,10 @@ def get_absensi():
         }), 200
     except SQLAlchemyError as e:
         logger.error(f"SQLAlchemy error during get_absensi: {e}")
-        return jsonify({
-            'message': 'Gagal mengambil data absensi', 
-            'error': str(e)
-        }), 500
+        return jsonify({'message': 'Gagal mengambil data absensi', 'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during get_absensi: {e}")
-        return jsonify({
-            'message': 'Terjadi kesalahan tidak terduga', 
-            'error': str(e)
-        }), 500
-
+        return jsonify({'message': 'Terjadi kesalahan tidak terduga', 'error': str(e)}), 500
 
 @app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
@@ -176,7 +164,6 @@ def update_absensi(id):
     except Exception as e:
         logger.error(f"Unexpected error during update_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
 
 @app.route('/absensi/<int:id>', methods=['DELETE'])
 def delete_absensi(id):
