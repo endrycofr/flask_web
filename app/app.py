@@ -1,11 +1,9 @@
 import os
 import time
 import logging
-from typing import Counter
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-from prometheus_client import Histogram
 import pytz
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
@@ -18,17 +16,7 @@ app = Flask(__name__)
 
 # Prometheus Metrics Initialization
 metrics = PrometheusMetrics(app)
-# Define Prometheus metrics
-REQUEST_COUNT = Counter(
-    'http_requests_total', 
-    'Total number of HTTP requests', 
-    ['method', 'endpoint', 'status']
-)
-REQUEST_DURATION = Histogram(
-    'http_request_duration_seconds', 
-    'Histogram of HTTP request duration in seconds', 
-    ['method', 'endpoint']
-)
+
 # Database Configuration
 db_uri = os.getenv(
     'DB_URI',
@@ -88,22 +76,6 @@ def create_tables():
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
         raise
-
-# Request Hooks for Prometheus Metrics
-@app.before_request
-def before_request():
-    """Start measuring request duration."""
-    request.start_time = time.time()
-
-@app.after_request
-def after_request(response):
-    """Record metrics after request processing."""
-    # Calculate request duration
-    duration = time.time() - request.start_time
-    # Record the request count and duration for the specific method and endpoint
-    REQUEST_COUNT.labels(method=request.method, endpoint=request.path, status=response.status_code).inc()
-    REQUEST_DURATION.labels(method=request.method, endpoint=request.path).observe(duration)
-    return response
 
 # Routes
 @app.route('/')
@@ -169,16 +141,16 @@ def update_absensi(id):
     """Update an existing attendance record."""
     try:
         data = request.json
-        # Find the absensi record by id
+        # Cari absensi berdasarkan id
         absensi = Absensi.query.get(id)
         if not absensi:
             return jsonify({'message': 'Absensi tidak ditemukan'}), 404
 
-        # Update fields based on the provided data
+        # Perbarui field berdasarkan data yang diberikan
         absensi.nrp = data.get('nrp', absensi.nrp)
         absensi.nama = data.get('nama', absensi.nama)
 
-        # Commit changes to the database
+        # Commit perubahan ke database
         db.session.commit()
 
         # Fetch the updated record
@@ -186,7 +158,7 @@ def update_absensi(id):
         
         return jsonify({'message': 'Absensi berhasil diperbarui', 'data': updated_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
-        db.session.rollback()  # Rollback on error
+        db.session.rollback()  # Rollback jika terjadi kesalahan
         logger.error(f"SQLAlchemy error during update_absensi: {e}")
         return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
     except Exception as e:
@@ -228,7 +200,7 @@ def delete_absensi(id):
 
 
 # Main Application
-if __name__ == '__main__':
+if __name__ == '_main_':
     if wait_for_database():
         create_tables()
         app.run(host='0.0.0.0', port=5000)
