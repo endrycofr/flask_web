@@ -2,7 +2,6 @@ import os
 import time
 import logging
 from datetime import datetime
-
 import pytz
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, render_template
@@ -18,7 +17,7 @@ load_dotenv()
 
 # Logging Configuration
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('app.log'),
@@ -33,10 +32,7 @@ app = Flask(__name__)
 metrics = PrometheusMetrics(app)
 
 # Database Configuration
-DB_URI = os.getenv(
-    'DB_URI', 
-    'mysql+mysqlconnector://flask_user:password@mysql/flask_app_db'
-)
+DB_URI = os.getenv('DB_URI', 'mysql+mysqlconnector://flask_user:password@mysql/flask_app_db')
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -45,13 +41,6 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_size': 10,
     'max_overflow': 20
 }
-
-# Production Configuration
-if os.getenv('FLASK_ENV', 'development') == 'production':
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
-    app.config['SESSION_COOKIE_SECURE'] = True
-    app.config['REMEMBER_COOKIE_SECURE'] = True
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 # Database Initialization
 db = SQLAlchemy(app)
@@ -89,18 +78,12 @@ class Absensi(db.Model):
 def init_db():
     """Initialize database connection and create tables."""
     try:
-        engine = create_engine(
-            DB_URI, 
-            pool_size=10,
-            max_overflow=20,
-            pool_timeout=30,
-            pool_recycle=1800
-        )
+        engine = create_engine(DB_URI, pool_size=10, max_overflow=20, pool_timeout=30, pool_recycle=1800)
         db_session.configure(bind=engine)
-        
+
         with app.app_context():
             db.create_all()
-        
+
         logger.info("Database initialized successfully.")
         return True
     except Exception as e:
@@ -164,33 +147,22 @@ def health_check():
 def create_absensi():
     """Add a new attendance record with improved validation."""
     try:
-        # Validate input data
         data = request.json
         try:
             validated_data = absensi_schema.load(data)
         except ValidationError as err:
-            return jsonify({
-                'message': 'Validasi input gagal', 
-                'errors': err.messages
-            }), 400
+            return jsonify({'message': 'Validasi input gagal', 'errors': err.messages}), 400
 
         # Create the new Absensi record
         new_absensi = Absensi(nrp=validated_data['nrp'], nama=validated_data['nama'])
-        
         db.session.add(new_absensi)
         db.session.commit()
 
-        return jsonify({
-            'message': 'Absensi berhasil ditambahkan', 
-            'data': new_absensi.to_dict()
-        }), 201
+        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 201
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"Database error during create_absensi: {e}")
-        return jsonify({
-            'message': 'Gagal menambahkan absensi', 
-            'error': 'Database error occurred'
-        }), 500
+        return jsonify({'message': 'Gagal menambahkan absensi', 'error': 'Database error occurred'}), 500
 
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
@@ -198,16 +170,9 @@ def get_absensi():
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
-        
-        # Limit per_page to prevent excessive data retrieval
         per_page = min(per_page, 100)
 
-        # Use pagination
-        pagination = Absensi.query.order_by(Absensi.timestamp.desc()).paginate(
-            page=page, 
-            per_page=per_page, 
-            error_out=False
-        )
+        pagination = Absensi.query.order_by(Absensi.timestamp.desc()).paginate(page=page, per_page=per_page, error_out=False)
 
         return jsonify({
             'message': 'Berhasil mengambil data absensi',
@@ -218,62 +183,38 @@ def get_absensi():
         }), 200
     except Exception as e:
         logger.error(f"Error retrieving absensi: {e}")
-        return jsonify({
-            'message': 'Gagal mengambil data absensi', 
-            'error': str(e)
-        }), 500
+        return jsonify({'message': 'Gagal mengambil data absensi', 'error': str(e)}), 500
 
 @app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
     """Update an existing attendance record."""
     try:
         data = request.json
-        
-        # Validate input data
         try:
             validated_data = absensi_schema.load(data, partial=True)
         except ValidationError as err:
-            return jsonify({
-                'message': 'Validasi input gagal', 
-                'errors': err.messages
-            }), 400
+            return jsonify({'message': 'Validasi input gagal', 'errors': err.messages}), 400
 
-        # Cari absensi berdasarkan id
         absensi = Absensi.query.get(id)
         if not absensi:
             return jsonify({'message': 'Absensi tidak ditemukan'}), 404
 
-        # Perbarui field berdasarkan data yang diberikan
         absensi.nrp = validated_data.get('nrp', absensi.nrp)
         absensi.nama = validated_data.get('nama', absensi.nama)
-
-        # Commit perubahan ke database
         db.session.commit()
 
-        # Fetch the updated record
         updated_absensi = Absensi.query.get(id)
         
-        return jsonify({
-            'message': 'Absensi berhasil diperbarui', 
-            'data': updated_absensi.to_dict()
-        }), 200
+        return jsonify({'message': 'Absensi berhasil diperbarui', 'data': updated_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during update_absensi: {e}")
-        return jsonify({
-            'message': 'Gagal memperbarui absensi', 
-            'error': str(e)
-        }), 500
+        return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
+
 # Main Application
 if __name__ == '__main__':
-    # Ensure database connection and initialization
     if wait_for_database() and init_db():
-        # Run the Flask application
-        app.run(
-            host='0.0.0.0', 
-            port=5000, 
-            debug=os.getenv('FLASK_ENV', 'development') == 'development'
-        )
+        app.run(host='0.0.0.0', port=5000, debug=os.getenv('FLASK_ENV', 'development') == 'development')
     else:
         logger.critical("Tidak dapat terhubung ke database. Aplikasi berhenti.")
         exit(1)
