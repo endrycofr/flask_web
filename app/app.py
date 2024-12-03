@@ -213,7 +213,7 @@ def delete_absensi(id):
 
 
 # Main Application
-if __name__ == '_main_':
+if __name__ == '__main__':
     if wait_for_database():
         create_tables()
         app.run(host='0.0.0.0', port=5000)
