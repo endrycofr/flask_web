@@ -44,7 +44,9 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     ports:
-      - "9000:9000"
+      - "9090:9090"
+    depends_on:
+      - app
 
   grafana:
     image: grafana/grafana:latest
