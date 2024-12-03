@@ -109,15 +109,16 @@ def wait_for_database(max_retries=5, delay=5):
 @app.errorhandler(404)
 def not_found_error(error):
     return jsonify({
-        'message': 'Sumber daya tidak ditemukan',
+        'message': 'Resource not found',
         'error': str(error)
     }), 404
 
 @app.errorhandler(500)
 def internal_error(error):
-    db.session.rollback()
+    db_session.rollback()  # Rollback on error
+    logger.error(f"Internal Server Error: {error}")
     return jsonify({
-        'message': 'Kesalahan internal server',
+        'message': 'Internal server error',
         'error': str(error)
     }), 500
 
@@ -151,18 +152,19 @@ def create_absensi():
         try:
             validated_data = absensi_schema.load(data)
         except ValidationError as err:
-            return jsonify({'message': 'Validasi input gagal', 'errors': err.messages}), 400
+            logger.warning(f"Validation failed: {err.messages}")
+            return jsonify({'message': 'Validation failed', 'errors': err.messages}), 400
 
         # Create the new Absensi record
         new_absensi = Absensi(nrp=validated_data['nrp'], nama=validated_data['nama'])
-        db.session.add(new_absensi)
-        db.session.commit()
+        db_session.add(new_absensi)
+        db_session.commit()
 
-        return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 201
+        return jsonify({'message': 'Absensi successfully added', 'data': new_absensi.to_dict()}), 201
     except SQLAlchemyError as e:
-        db.session.rollback()
+        db_session.rollback()
         logger.error(f"Database error during create_absensi: {e}")
-        return jsonify({'message': 'Gagal menambahkan absensi', 'error': 'Database error occurred'}), 500
+        return jsonify({'message': 'Failed to add absensi', 'error': 'Database error occurred'}), 500
 
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
@@ -175,7 +177,7 @@ def get_absensi():
         pagination = Absensi.query.order_by(Absensi.timestamp.desc()).paginate(page=page, per_page=per_page, error_out=False)
 
         return jsonify({
-            'message': 'Berhasil mengambil data absensi',
+            'message': 'Absensi data retrieved successfully',
             'total': pagination.total,
             'page': page,
             'per_page': per_page,
@@ -183,7 +185,7 @@ def get_absensi():
         }), 200
     except Exception as e:
         logger.error(f"Error retrieving absensi: {e}")
-        return jsonify({'message': 'Gagal mengambil data absensi', 'error': str(e)}), 500
+        return jsonify({'message': 'Failed to retrieve absensi data', 'error': str(e)}), 500
 
 @app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
@@ -193,28 +195,29 @@ def update_absensi(id):
         try:
             validated_data = absensi_schema.load(data, partial=True)
         except ValidationError as err:
-            return jsonify({'message': 'Validasi input gagal', 'errors': err.messages}), 400
+            logger.warning(f"Validation failed: {err.messages}")
+            return jsonify({'message': 'Validation failed', 'errors': err.messages}), 400
 
         absensi = Absensi.query.get(id)
         if not absensi:
-            return jsonify({'message': 'Absensi tidak ditemukan'}), 404
+            return jsonify({'message': 'Absensi not found'}), 404
 
         absensi.nrp = validated_data.get('nrp', absensi.nrp)
         absensi.nama = validated_data.get('nama', absensi.nama)
-        db.session.commit()
+        db_session.commit()
 
         updated_absensi = Absensi.query.get(id)
         
-        return jsonify({'message': 'Absensi berhasil diperbarui', 'data': updated_absensi.to_dict()}), 200
+        return jsonify({'message': 'Absensi successfully updated', 'data': updated_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
-        db.session.rollback()
+        db_session.rollback()
         logger.error(f"SQLAlchemy error during update_absensi: {e}")
-        return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
+        return jsonify({'message': 'Failed to update absensi', 'error': str(e)}), 500
 
 # Main Application
 if __name__ == '__main__':
     if wait_for_database() and init_db():
         app.run(host='0.0.0.0', port=5000, debug=os.getenv('FLASK_ENV', 'development') == 'development')
     else:
-        logger.critical("Tidak dapat terhubung ke database. Aplikasi berhenti.")
+        logger.critical("Unable to connect to the database. The application will stop.")
         exit(1)
