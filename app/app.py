@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pytz  # Add this import for timezone handling
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
+from prometheus_client import Gauge, Counter, Histogram
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,6 +41,7 @@ class Absensi(db.Model):
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
     timestamp = db.Column(db.DateTime, default=lambda: datetime.now(pytz.utc))
+    
     def to_dict(self):
         # Convert timestamp to local timezone (Asia/Jakarta)
         local_timezone = pytz.timezone('Asia/Jakarta')
@@ -80,6 +82,21 @@ def create_tables():
         raise
 
 
+# Metrics for process memory and CPU
+PROCESS_CPU_SECONDS_TOTAL = Counter('process_cpu_seconds_total', 'Total user and system CPU time spent in seconds')
+PROCESS_MEMORY_BYTES = Gauge('process_resident_memory_bytes', 'Resident memory size in bytes')
+
+# Register custom metrics for the process
+@metrics.gauge('process_cpu_seconds_total', 'Total user and system CPU time spent in seconds')
+def track_cpu_usage():
+    # You can add logic to track CPU usage over time, if needed
+    return 0  # Return the current CPU usage (e.g., from psutil)
+
+@metrics.gauge('process_resident_memory_bytes', 'Resident memory size in bytes')
+def track_memory_usage():
+    # You can add logic to track memory usage over time, if needed
+    return 0  # Return the current memory usage (e.g., from psutil)
+
 # Routes
 @app.route('/')
 def index():
@@ -96,6 +113,7 @@ def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
 
 @app.route('/absensi', methods=['POST'])
 def create_absensi():
@@ -210,7 +228,6 @@ def delete_absensi(id):
             'message': 'Terjadi kesalahan tidak terduga', 
             'error': str(e)
         }), 500
-
 
 # Main Application
 if __name__ == '__main__':
