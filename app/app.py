@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import pytz
-from prometheus_flask_exporter import PrometheusMetrics, Counter
+from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
 
 # Logging Configuration
@@ -16,16 +16,7 @@ app = Flask(__name__)
 
 # Prometheus Metrics Initialization
 metrics = PrometheusMetrics(app)
-metrics.info("app_info", "Application info", version="1.0.0")
-
-# Custom Metrics
-crud_counter = Counter("crud_requests_total", "Total CRUD requests", labels={"method", "endpoint"})
-total_requests = Counter("total_requests_per_minute", "Total requests per minute", labels={"method"})
-request_latency = metrics.histogram(
-    "flask_http_request_duration_seconds",
-    "Request duration (seconds)",
-    labels={"method", "status"}
-)
+metrics.info("app_info", "Application Info", version="1.0.0")
 
 # Database Configuration
 db_uri = os.getenv(
@@ -41,7 +32,7 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 
 db = SQLAlchemy(app)
 
-# Specify your local timezone (e.g., "Asia/Jakarta" for Indonesia)
+# Timezone Configuration
 LOCAL_TIMEZONE = pytz.timezone("Asia/Jakarta")
 
 # Database Model
@@ -90,13 +81,6 @@ def create_tables():
         raise
 
 
-# Middleware to Collect Metrics for CRUD Methods
-@app.before_request
-def before_request_func():
-    crud_counter.labels(method=request.method, endpoint=request.endpoint).inc()
-    total_requests.labels(method=request.method).inc()
-
-
 # Routes
 @app.route("/")
 def index():
@@ -104,7 +88,6 @@ def index():
 
 
 @app.route("/health", methods=["GET"])
-@request_latency.time()  # Measure request latency
 def health_check():
     """Health check to monitor the app status."""
     try:
@@ -117,7 +100,6 @@ def health_check():
 
 
 @app.route("/absensi", methods=["POST"])
-@request_latency.time()
 def create_absensi():
     """Add a new attendance record."""
     try:
@@ -125,21 +107,23 @@ def create_absensi():
         if not data or "nrp" not in data or "nama" not in data:
             return jsonify({"message": "Input tidak valid"}), 400
 
+        # Create the new Absensi record
         new_absensi = Absensi(nrp=data["nrp"], nama=data["nama"])
+
         db.session.add(new_absensi)
         db.session.commit()
 
-        return jsonify(
-            {"message": "Absensi berhasil ditambahkan", "data": new_absensi.to_dict()}
-        ), 200
+        return jsonify({"message": "Absensi berhasil ditambahkan", "data": new_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
         return jsonify({"message": "Gagal menambahkan absensi", "error": str(e)}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error during create_absensi: {e}")
+        return jsonify({"message": "An unexpected error occurred", "error": str(e)}), 500
 
 
 @app.route("/absensi", methods=["GET"])
-@request_latency.time()
 def get_absensi():
     """Get all attendance records."""
     try:
@@ -151,36 +135,26 @@ def get_absensi():
                 "data": [absensi.to_dict() for absensi in absensi_list],
             }
         ), 200
+    except SQLAlchemyError as e:
+        logger.error(f"SQLAlchemy error during get_absensi: {e}")
+        return jsonify({"message": "Gagal mengambil data absensi", "error": str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during get_absensi: {e}")
         return jsonify({"message": "Terjadi kesalahan tidak terduga", "error": str(e)}), 500
 
 
-@app.route("/absensi/<int:id>", methods=["PUT"])
-@request_latency.time()
-def update_absensi(id):
-    """Update an existing attendance record."""
-    try:
-        data = request.json
-        absensi = Absensi.query.get(id)
-        if not absensi:
-            return jsonify({"message": "Absensi tidak ditemukan"}), 404
-
-        absensi.nrp = data.get("nrp", absensi.nrp)
-        absensi.nama = data.get("nama", absensi.nama)
-        db.session.commit()
-
-        return jsonify(
-            {"message": "Absensi berhasil diperbarui", "data": absensi.to_dict()}
-        ), 200
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        logger.error(f"SQLAlchemy error during update_absensi: {e}")
-        return jsonify({"message": "Gagal memperbarui absensi", "error": str(e)}), 500
+@app.route("/metrics", methods=["GET"])
+def metrics_info():
+    """Expose Prometheus metrics for monitoring."""
+    return jsonify(
+        {
+            "total_requests": metrics.registry["flask_http_request_total"]._samples,
+            "request_duration": metrics.registry["flask_http_request_duration_seconds"]._samples,
+        }
+    )
 
 
 @app.route("/absensi/<int:id>", methods=["DELETE"])
-@request_latency.time()
 def delete_absensi(id):
     """Delete an attendance record."""
     try:
@@ -190,12 +164,14 @@ def delete_absensi(id):
 
         db.session.delete(absensi)
         db.session.commit()
-
         return jsonify({"message": "Absensi berhasil dihapus", "deleted_id": id}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during delete_absensi: {e}")
         return jsonify({"message": "Gagal menghapus absensi", "error": str(e)}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error during delete_absensi: {e}")
+        return jsonify({"message": "An unexpected error occurred", "error": str(e)}), 500
 
 
 # Main Application
