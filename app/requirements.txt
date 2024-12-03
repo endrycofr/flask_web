@@ -7,3 +7,4 @@ MarkupSafe
 prometheus_client
 flask-restful
 pytz
+requests

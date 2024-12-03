@@ -229,15 +229,7 @@ import pytz
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_flask_exporter import PrometheusMetrics
-from metrics import (
-    DATABASE_OPERATIONS,
-    EXCEPTIONS,
-    record_request_start, 
-    record_request_end, 
-    record_event_processing,
-    record_exception,
-    record_database_operation
-)
+from prometheus_client import Counter
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -263,7 +255,7 @@ class Absensi(db.Model):
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
     timestamp = db.Column(db.DateTime, default=lambda: datetime.now(pytz.utc))
-    
+
     def to_dict(self):
         local_timestamp = self.timestamp.astimezone(LOCAL_TIMEZONE)
         return {
@@ -273,23 +265,39 @@ class Absensi(db.Model):
             'timestamp': local_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
         }
 
+# Prometheus custom metrics
+DATABASE_OPERATIONS = Counter('database_operations', 'Database operation count', ['operation_type', 'status'])
+EXCEPTIONS = Counter('exceptions', 'Exception count', ['method', 'endpoint', 'exception_type'])
+
 # Middleware for tracking request metrics
 @app.before_request
 def before_request():
-    g.request_start_time = record_request_start(
-        method=request.method, 
-        endpoint=request.endpoint or request.path
-    )
+    g.request_start_time = time.time()
 
 @app.after_request
 def after_request(response):
     record_request_end(
-        method=request.method, 
-        endpoint=request.endpoint or request.path, 
-        start_time=g.request_start_time, 
+        method=request.method,
+        endpoint=request.endpoint or request.path,
+        start_time=g.request_start_time,
         status_code=response.status_code
     )
     return response
+
+# Function to record the request end
+def record_request_end(method, endpoint, start_time, status_code):
+    """Record the end of a request, including its duration and status code."""
+    duration = time.time() - start_time
+    logger.info(f"Request {method} {endpoint} completed with status {status_code} in {duration:.4f} seconds.")
+    # Optionally, you can also add Prometheus metrics here:
+    # record_duration_metric(duration, status_code)
+
+# Define the event processing logging function
+def record_event_processing(event_type, status, duration):
+    """Log the processing of an event, including its status and duration."""
+    logger.info(f"Event '{event_type}' completed with status '{status}' in {duration:.4f} seconds.")
+    # Optionally, you could also add Prometheus metrics here for event processing
+    # record_event_metric(event_type, status, duration)
 
 # Routes
 @app.route('/')
@@ -348,19 +356,12 @@ def create_absensi():
         return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
-        record_event_processing(
-            event_type='absensi_create', 
-            status='database_error', 
-            duration=time.time() - start_time
-        )
+        DATABASE_OPERATIONS.labels(operation_type='create', status='failure').inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='SQLAlchemyError').inc()
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
         return jsonify({'message': 'Gagal menambahkan absensi', 'error': str(e)}), 500
     except Exception as e:
-        record_event_processing(
-            event_type='absensi_create', 
-            status='unexpected_error', 
-            duration=time.time() - start_time
-        )
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='Exception').inc()
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
@@ -381,19 +382,11 @@ def get_absensi():
     except SQLAlchemyError as e:
         logger.error(f"SQLAlchemy error during get_absensi: {e}")
         DATABASE_OPERATIONS.labels(operation_type='read', status='failure').inc()
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='SQLAlchemyError').inc()
         return jsonify({'message': 'Gagal mengambil data absensi', 'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during get_absensi: {e}")
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='Exception').inc()
         return jsonify({'message': 'Terjadi kesalahan tidak terduga', 'error': str(e)}), 500
 
 @app.route('/absensi/<int:id>', methods=['PUT'])
@@ -416,18 +409,10 @@ def update_absensi(id):
     except SQLAlchemyError as e:
         db.session.rollback()
         DATABASE_OPERATIONS.labels(operation_type='update', status='failure').inc()
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='SQLAlchemyError').inc()
         return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
     except Exception as e:
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='Exception').inc()
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
 @app.route('/absensi/<int:id>', methods=['DELETE'])
@@ -440,25 +425,19 @@ def delete_absensi(id):
 
         db.session.delete(absensi)
         db.session.commit()
+
         DATABASE_OPERATIONS.labels(operation_type='delete', status='success').inc()
 
         return jsonify({'message': 'Absensi berhasil dihapus'}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         DATABASE_OPERATIONS.labels(operation_type='delete', status='failure').inc()
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='SQLAlchemyError').inc()
         return jsonify({'message': 'Gagal menghapus absensi', 'error': str(e)}), 500
     except Exception as e:
-        EXCEPTIONS.labels(
-            method=request.method, 
-            endpoint=request.path, 
-            exception_type=type(e).__name__
-        ).inc()
+        EXCEPTIONS.labels(method=request.method, endpoint=request.path, exception_type='Exception').inc()
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
+# Start the Flask application
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', debug=True)
