@@ -2,6 +2,7 @@ from prometheus_client import Counter, Histogram, Gauge
 from prometheus_flask_exporter import PrometheusMetrics
 from flask import request
 import time
+from functools import wraps
 
 # HTTP Request Metrics
 HTTP_REQUESTS = Counter(
@@ -104,3 +105,18 @@ def record_database_operation(operation_type, status):
         operation_type=operation_type, 
         status=status
     ).inc()
+
+
+def metric_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = record_request_start(request.method, request.path)
+        try:
+            result = func(*args, **kwargs)
+            record_request_end(request.method, request.path, start_time, 200)
+            return result
+        except Exception as e:
+            record_exception(request.method, request.path, type(e).__name__)
+            record_request_end(request.method, request.path, start_time, 500)
+            raise
+    return wrapper
