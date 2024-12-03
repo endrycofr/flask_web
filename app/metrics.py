@@ -1,9 +1,9 @@
 from prometheus_client import Counter, Histogram, Gauge
+from prometheus_flask_exporter import PrometheusMetrics
 from flask import request
 import time
 
-
-# HTTP Requests Metrics
+# HTTP Request Metrics
 HTTP_REQUESTS = Counter(
     'http_requests_total', 
     'Total number of HTTP requests', 
@@ -49,10 +49,25 @@ EVENT_PROCESSING_DURATION = Histogram(
     ['type']
 )
 
+# Custom Metrics
+REQUEST_COUNT = Counter(
+    'flask_app_request_count', 
+    'Total number of requests',
+    ['method', 'endpoint', 'http_status']
+)
+
+REQUEST_LATENCY = Histogram(
+    'flask_app_request_latency_seconds', 
+    'Request latency in seconds', 
+    ['method', 'endpoint']
+)
+
+
 def record_request_start(method, endpoint):
     """Record the start of a request"""
     IN_PROGRESS_REQUESTS.labels(method=method, endpoint=endpoint).inc()
     return time.time()
+
 
 def record_request_end(method, endpoint, start_time, status_code):
     """Record the end of a request"""
@@ -67,10 +82,12 @@ def record_request_end(method, endpoint, start_time, status_code):
     # Decrement in-progress requests
     IN_PROGRESS_REQUESTS.labels(method=method, endpoint=endpoint).dec()
 
+
 def record_event_processing(event_type, status, duration):
     """Record event processing metrics"""
     EVENTS_PROCESSED.labels(type=event_type, status=status).inc()
     EVENT_PROCESSING_DURATION.labels(type=event_type).observe(duration)
+
 
 def record_exception(method, endpoint, exception_type):
     """Record exception metrics"""
@@ -79,6 +96,7 @@ def record_exception(method, endpoint, exception_type):
         endpoint=endpoint, 
         exception_type=exception_type
     ).inc()
+
 
 def record_database_operation(operation_type, status):
     """Record database operation metrics"""
