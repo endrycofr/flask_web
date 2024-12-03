@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Prometheus Metrics Initialization
+# Prometheus Metrics Initialization (Make sure to initialize only once)
 metrics = PrometheusMetrics(app)
 
-# Create custom Prometheus metrics for each HTTP method
+# Create custom Prometheus metrics for each HTTP method - initialize only once
 REQUEST_COUNT = Counter(
     'flask_http_request_count', 
     'Total count of HTTP requests by method', 
@@ -227,6 +227,7 @@ def delete_absensi(id):
             'message': 'An unexpected error occurred', 
             'error': str(e)
         }), 500
+
 
 # Main Application
 if __name__ == '__main__':
