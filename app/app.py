@@ -4,10 +4,10 @@ import logging
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
-import pytz  # Add this import for timezone handling
+import pytz
 from prometheus_flask_exporter import PrometheusMetrics
 from sqlalchemy.exc import SQLAlchemyError
-import psutil  # Add this for process metrics (memory and CPU usage)
+import psutil  # For process metrics (memory and CPU usage)
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -41,10 +41,10 @@ class Absensi(db.Model):
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
     timestamp = db.Column(db.DateTime, default=lambda: datetime.now(pytz.utc))
+    
     def to_dict(self):
         # Convert timestamp to local timezone (Asia/Jakarta)
-        local_timezone = pytz.timezone('Asia/Jakarta')
-        local_timestamp = self.timestamp.astimezone(local_timezone)
+        local_timestamp = self.timestamp.astimezone(LOCAL_TIMEZONE)
         return {
             'id': self.id,
             'nrp': self.nrp,
@@ -227,4 +227,3 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=5000)
     else:
         logger.critical("Tidak dapat terhubung ke database. Memulai ulang aplikasi.")
-        exit(1)
