@@ -153,6 +153,35 @@ def metrics_info():
         }
     )
 
+@app.route('/absensi/<int:id>', methods=['PUT'])
+def update_absensi(id):
+    """Update an existing attendance record."""
+    try:
+        data = request.json
+        # Cari absensi berdasarkan id
+        absensi = Absensi.query.get(id)
+        if not absensi:
+            return jsonify({'message': 'Absensi tidak ditemukan'}), 404
+
+        # Perbarui field berdasarkan data yang diberikan
+        absensi.nrp = data.get('nrp', absensi.nrp)
+        absensi.nama = data.get('nama', absensi.nama)
+
+        # Commit perubahan ke database
+        db.session.commit()
+
+        # Fetch the updated record
+        updated_absensi = Absensi.query.get(id)
+        
+        return jsonify({'message': 'Absensi berhasil diperbarui', 'data': updated_absensi.to_dict()}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()  # Rollback jika terjadi kesalahan
+        logger.error(f"SQLAlchemy error during update_absensi: {e}")
+        return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
+    except Exception as e:
+        logger.error(f"Unexpected error during update_absensi: {e}")
+        return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
+
 
 @app.route("/absensi/<int:id>", methods=["DELETE"])
 def delete_absensi(id):
