@@ -62,12 +62,8 @@ LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta')
 
 # Input Validation Schema
 class AbsensiSchema(Schema):
-    nrp = fields.String(required=True, validate=[
-        validate.Length(min=1, max=20)
-    ])
-    nama = fields.String(required=True, validate=[
-        validate.Length(min=1, max=100)
-    ])
+    nrp = fields.String(required=True, validate=[validate.Length(min=1, max=20)])
+    nama = fields.String(required=True, validate=[validate.Length(min=1, max=100)])
 
 absensi_schema = AbsensiSchema()
 
@@ -78,10 +74,7 @@ class Absensi(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(
-        db.DateTime, 
-        default=lambda: datetime.now(pytz.utc)
-    )
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(pytz.utc))
     
     def to_dict(self):
         # Convert timestamp to local timezone
@@ -182,10 +175,7 @@ def create_absensi():
             }), 400
 
         # Create the new Absensi record
-        new_absensi = Absensi(
-            nrp=validated_data['nrp'], 
-            nama=validated_data['nama']
-        )
+        new_absensi = Absensi(nrp=validated_data['nrp'], nama=validated_data['nama'])
         
         db.session.add(new_absensi)
         db.session.commit()
@@ -274,46 +264,6 @@ def update_absensi(id):
             'message': 'Gagal memperbarui absensi', 
             'error': str(e)
         }), 500
-    except Exception as e:
-        logger.error(f"Unexpected error during update_absensi: {e}")
-        return jsonify({
-            'message': 'Terjadi kesalahan tidak terduga', 
-            'error': str(e)
-        }), 500
-
-@app.route('/absensi/<int:id>', methods=['DELETE'])
-def delete_absensi(id):
-    """Delete an attendance record."""
-    try:
-        with app.app_context():
-            absensi = Absensi.query.get(id)
-            if not absensi:
-                return jsonify({
-                    'message': 'Absensi tidak ditemukan', 
-                    'error': f'Tidak ada data dengan ID {id}'
-                }), 404
-
-            db.session.delete(absensi)
-            db.session.commit()
-
-        return jsonify({
-            'message': 'Absensi berhasil dihapus',
-            'deleted_id': id
-        }), 200
-    except SQLAlchemyError as e:
-        db.session.rollback()
-        logger.error(f"SQLAlchemy error during delete_absensi: {e}")
-        return jsonify({
-            'message': 'Gagal menghapus absensi', 
-            'error': str(e)
-        }), 500
-    except Exception as e:
-        logger.error(f"Unexpected error during delete_absensi: {e}")
-        return jsonify({
-            'message': 'Terjadi kesalahan tidak terduga', 
-            'error': str(e)
-        }), 500
-
 # Main Application
 if __name__ == '__main__':
     # Ensure database connection and initialization
