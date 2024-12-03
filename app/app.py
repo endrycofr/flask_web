@@ -10,9 +10,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # Prometheus Metrics Initialization
 metrics = PrometheusMetrics(app)
@@ -200,7 +200,7 @@ def delete_absensi(id):
 
 
 # Main Application
-if _name_ == '_main_':
+if __name__ == '_main_':
     if wait_for_database():
         create_tables()
         app.run(host='0.0.0.0', port=5000)
