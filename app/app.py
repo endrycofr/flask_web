@@ -221,17 +221,21 @@
 #         logger.critical("Tidak dapat terhubung ke database. Aplikasi berhenti.")
 #         exit(1)
 
-
 import os
 import time
 import logging
+import json
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import pytz
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_flask_exporter import PrometheusMetrics
-from metrics import REQUEST_COUNT, REQUEST_LATENCY, RESPONSE_TIME, THROUGHPUT, REQUEST_DELAY
+from metrics import (
+    ACTIVE_REQUESTS, COMPLETED_REQUESTS, REQUEST_DURATION, 
+    EXCEPTIONS, HTTP_REQUESTS, DATABASE_OPERATIONS, 
+    REQUEST_SIZE, RESPONSE_SIZE
+)
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -252,6 +256,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 }
 
 db = SQLAlchemy(app)
+metrics = PrometheusMetrics(app)
 
 # Specify your local timezone (e.g., 'Asia/Jakarta' for Indonesia)
 LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta')
@@ -273,12 +278,37 @@ class Absensi(db.Model):
             'timestamp': local_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z')
         }
 
+# Custom metrics middleware
+@app.before_request
+def before_request():
+    ACTIVE_REQUESTS.inc()
+    request.start_time = time.time()
+    request.request_size = len(request.data)
+    REQUEST_SIZE.observe(request.request_size)
+
+@app.after_request
+def after_request(response):
+    ACTIVE_REQUESTS.dec()
+    COMPLETED_REQUESTS.inc()
+    
+    request_duration = time.time() - request.start_time
+    REQUEST_DURATION.observe(request_duration)
+    
+    response_size = len(response.data)
+    RESPONSE_SIZE.observe(response_size)
+    
+    HTTP_REQUESTS.labels(
+        method=request.method, 
+        endpoint=request.path, 
+        status=response.status_code
+    ).inc()
+    
+    return response
 
 # Routes
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -289,13 +319,16 @@ def health_check():
         return jsonify({'status': 'healthy', 'app_number': os.getenv('APP_NUMBER', '1')}), 200
     except Exception as e:
         logger.error(f"Health check failed: {e}")
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
-
 
 @app.route('/absensi', methods=['POST'])
 def create_absensi():
     """Add a new attendance record."""
-    start_time = time.time()  # Start time for latency measurement
     try:
         data = request.json
         if not data or 'nrp' not in data or 'nama' not in data:
@@ -307,37 +340,38 @@ def create_absensi():
         # Use db.session to manage the transaction
         db.session.add(new_absensi)
         db.session.commit()
-
-        # Record the request latency and response time in Prometheus
-        duration = time.time() - start_time
-        REQUEST_COUNT.labels(method='POST', endpoint='/absensi').inc()
-        REQUEST_LATENCY.labels(method='POST', endpoint='/absensi').observe(duration)
-        RESPONSE_TIME.labels(method='POST', endpoint='/absensi').observe(duration)
+        
+        DATABASE_OPERATIONS.labels(operation_type='create', status='success').inc()
 
         return jsonify({'message': 'Absensi berhasil ditambahkan', 'data': new_absensi.to_dict()}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during create_absensi: {e}")
+        DATABASE_OPERATIONS.labels(operation_type='create', status='failure').inc()
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'message': 'Gagal menambahkan absensi', 'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during create_absensi: {e}")
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
 
 @app.route('/absensi', methods=['GET'])
 def get_absensi():
     """Get all attendance records."""
-    start_time = time.time()  # Start time for latency measurement
     try:
         with app.app_context():
             absensi_list = Absensi.query.order_by(Absensi.timestamp.desc()).all()
         logger.info(f"Fetched {len(absensi_list)} absensi records.")
         
-        # Record the request latency in Prometheus
-        duration = time.time() - start_time
-        REQUEST_COUNT.labels(method='GET', endpoint='/absensi').inc()
-        REQUEST_LATENCY.labels(method='GET', endpoint='/absensi').observe(duration)
-        RESPONSE_TIME.labels(method='GET', endpoint='/absensi').observe(duration)
+        DATABASE_OPERATIONS.labels(operation_type='read', status='success').inc()
 
         return jsonify({
             'message': 'Berhasil mengambil data absensi',
@@ -346,22 +380,31 @@ def get_absensi():
         }), 200
     except SQLAlchemyError as e:
         logger.error(f"SQLAlchemy error during get_absensi: {e}")
+        DATABASE_OPERATIONS.labels(operation_type='read', status='failure').inc()
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({
             'message': 'Gagal mengambil data absensi', 
             'error': str(e)
         }), 500
     except Exception as e:
         logger.error(f"Unexpected error during get_absensi: {e}")
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({
             'message': 'Terjadi kesalahan tidak terduga', 
             'error': str(e)
         }), 500
 
-
 @app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
     """Update an existing attendance record."""
-    start_time = time.time()  # Start time for latency measurement
     try:
         data = request.json
         # Cari absensi berdasarkan id
@@ -375,12 +418,8 @@ def update_absensi(id):
 
         # Commit perubahan ke database
         db.session.commit()
-
-        # Record the request latency in Prometheus
-        duration = time.time() - start_time
-        REQUEST_COUNT.labels(method='PUT', endpoint='/absensi').inc()
-        REQUEST_LATENCY.labels(method='PUT', endpoint='/absensi').observe(duration)
-        RESPONSE_TIME.labels(method='PUT', endpoint='/absensi').observe(duration)
+        
+        DATABASE_OPERATIONS.labels(operation_type='update', status='success').inc()
 
         # Fetch the updated record
         updated_absensi = Absensi.query.get(id)
@@ -389,16 +428,25 @@ def update_absensi(id):
     except SQLAlchemyError as e:
         db.session.rollback()  # Rollback jika terjadi kesalahan
         logger.error(f"SQLAlchemy error during update_absensi: {e}")
+        DATABASE_OPERATIONS.labels(operation_type='update', status='failure').inc()
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'message': 'Gagal memperbarui absensi', 'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during update_absensi: {e}")
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
-
 
 @app.route('/absensi/<int:id>', methods=['DELETE'])
 def delete_absensi(id):
     """Delete an attendance record."""
-    start_time = time.time()  # Start time for latency measurement
     try:
         with app.app_context():
             absensi = Absensi.query.get(id)
@@ -410,23 +458,28 @@ def delete_absensi(id):
 
             db.session.delete(absensi)
             db.session.commit()
-
-        # Record the request latency in Prometheus
-        duration = time.time() - start_time
-        REQUEST_COUNT.labels(method='DELETE', endpoint='/absensi').inc()
-        REQUEST_LATENCY.labels(method='DELETE', endpoint='/absensi').observe(duration)
-        RESPONSE_TIME.labels(method='DELETE', endpoint='/absensi').observe(duration)
+            
+            DATABASE_OPERATIONS.labels(operation_type='delete', status='success').inc()
 
         return jsonify({'message': 'Absensi berhasil dihapus'}), 200
     except SQLAlchemyError as e:
         db.session.rollback()
         logger.error(f"SQLAlchemy error during delete_absensi: {e}")
+        DATABASE_OPERATIONS.labels(operation_type='delete', status='failure').inc()
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'message': 'Gagal menghapus absensi', 'error': str(e)}), 500
     except Exception as e:
         logger.error(f"Unexpected error during delete_absensi: {e}")
+        EXCEPTIONS.labels(
+            method=request.method, 
+            endpoint=request.path, 
+            exception_type=type(e).__name__
+        ).inc()
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
-
 if __name__ == '__main__':
-    metrics = PrometheusMetrics(app)
     app.run(host='0.0.0.0', port=5000, debug=True)
