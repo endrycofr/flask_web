@@ -220,8 +220,8 @@
 #     else:
 #         logger.critical("Tidak dapat terhubung ke database. Aplikasi berhenti.")
 #         exit(1)
+
 import os
-import time
 import logging
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
@@ -237,10 +237,11 @@ logger = logging.getLogger(__name__)
 # Initialize Flask App
 app = Flask(__name__)
 
-# Initialize Prometheus Metrics with default settings
+# Initialize Prometheus Metrics
 metrics = PrometheusMetrics(app, path='/metrics')
+LOCAL_TIMEZONE = pytz.timezone('Asia/Jakarta')
 
-# Add default metrics
+# Add default metrics for the application
 metrics.info('app_info', 'Absensi Application', version='1.0.0')
 
 # Database Configuration
@@ -263,7 +264,7 @@ class Absensi(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nrp = db.Column(db.String(20), nullable=False)
     nama = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(LOCAL_TIMEZONE))
     
     def to_dict(self):
         return {
@@ -273,18 +274,11 @@ class Absensi(db.Model):
             'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S')
         }
 
-# Decorator to track method performance
-@metrics.counter('absensi_requests_total', 'Total number of requests', labels={'endpoint': lambda: request.endpoint})
-@metrics.gauge('absensi_in_progress', 'Requests in progress')
-@metrics.histogram('absensi_request_duration_seconds', 'Request duration in seconds')
-def track_request_metrics(f):
-    def wrapper(*args, **kwargs):
-        return f(*args, **kwargs)
-    return wrapper
-
 # Health Check Route
 @app.route('/health', methods=['GET'])
-@track_request_metrics
+@metrics.counter('health_requests_total', 'Total health check requests')
+@metrics.gauge('health_requests_in_progress', 'Health check requests in progress')
+@metrics.histogram('health_request_duration_seconds', 'Health check request duration in seconds')
 def health_check():
     try:
         # Simulate database health check
@@ -296,7 +290,9 @@ def health_check():
 
 # Create Absensi Route
 @app.route('/absensi', methods=['POST'])
-@track_request_metrics
+@metrics.counter('absensi_requests_total', 'Total create absensi requests')
+@metrics.gauge('absensi_requests_in_progress', 'Create absensi requests in progress')
+@metrics.histogram('absensi_request_duration_seconds', 'Create absensi request duration in seconds')
 def create_absensi():
     try:
         data = request.json
@@ -321,7 +317,9 @@ def create_absensi():
 
 # Get Absensi Route
 @app.route('/absensi', methods=['GET'])
-@track_request_metrics
+@metrics.counter('absensi_requests_total', 'Total get absensi requests')
+@metrics.gauge('absensi_requests_in_progress', 'Get absensi requests in progress')
+@metrics.histogram('absensi_request_duration_seconds', 'Get absensi request duration in seconds')
 def get_absensi():
     try:
         absensi_list = Absensi.query.all()
@@ -338,7 +336,9 @@ def get_absensi():
 
 # Update Absensi Route
 @app.route('/absensi/<int:id>', methods=['PUT'])
-@track_request_metrics
+@metrics.counter('absensi_requests_total', 'Total update absensi requests')
+@metrics.gauge('absensi_requests_in_progress', 'Update absensi requests in progress')
+@metrics.histogram('absensi_request_duration_seconds', 'Update absensi request duration in seconds')
 def update_absensi(id):
     try:
         absensi = Absensi.query.get_or_404(id)
@@ -362,7 +362,9 @@ def update_absensi(id):
 
 # Delete Absensi Route
 @app.route('/absensi/<int:id>', methods=['DELETE'])
-@track_request_metrics
+@metrics.counter('absensi_requests_total', 'Total delete absensi requests')
+@metrics.gauge('absensi_requests_in_progress', 'Delete absensi requests in progress')
+@metrics.histogram('absensi_request_duration_seconds', 'Delete absensi request duration in seconds')
 def delete_absensi(id):
     try:
         absensi = Absensi.query.get_or_404(id)
