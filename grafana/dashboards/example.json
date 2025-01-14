@@ -177,7 +177,7 @@
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "percent"
         },
         "overrides": [
           {
@@ -226,7 +226,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "code",
-          "expr": "rate(flask_http_request_duration_seconds_sum{status=\"200\"}[10m]) / rate(flask_http_request_duration_seconds_count{status=\"200\"}[10m])\r\n",
+          "expr": "sum(rate(flask_http_request_duration_seconds_count{status!=\"500\"}[30s]))\r\n",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -979,6 +979,6 @@
   "timezone": "",
   "title": "Example dashboard",
   "uid": "_eX4mpl3",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
