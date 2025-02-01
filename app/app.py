@@ -9,6 +9,7 @@ import psutil
 from prometheus_flask_exporter import PrometheusMetrics
 from prometheus_client import Counter, Histogram, Gauge
 from sqlalchemy.exc import SQLAlchemyError
+import threading
 
 # Logging Configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -77,12 +78,20 @@ class Absensi(db.Model):
             "timestamp": local_timestamp.strftime("%Y-%m-%d %H:%M:%S %Z"),
         }
 
+# Function to update CPU and Memory usage
+def update_system_metrics():
+    while True:
+        CPU_USAGE.set(psutil.cpu_percent(interval=1.0))
+        MEMORY_USAGE.set(psutil.virtual_memory().percent)
+        time.sleep(5)  # Update every 5 seconds
+
+# Start the background thread to update system metrics
+threading.Thread(target=update_system_metrics, daemon=True).start()
 
 # Monitoring Middleware
 @app.before_request
 def before_request():
     request.start_time = time.time()
-
 
 @app.after_request
 def after_request(response):
@@ -95,11 +104,7 @@ def after_request(response):
     if response.status_code >= 400:
         ERROR_COUNT.labels(endpoint=request.endpoint, http_status=response.status_code).inc()
 
-    CPU_USAGE.set(psutil.cpu_percent(interval=0.1))
-    MEMORY_USAGE.set(psutil.virtual_memory().percent)
-
     return response
-
 
 # Wait for Database Connection
 def wait_for_database(max_retries=5, delay=5):
@@ -115,7 +120,6 @@ def wait_for_database(max_retries=5, delay=5):
     logger.error("Max retries reached. Cannot connect to the database.")
     return False
 
-
 # Create Tables if Needed
 def create_tables():
     try:
@@ -126,12 +130,10 @@ def create_tables():
         logger.error(f"Error creating database tables: {e}")
         raise
 
-
 # Routes
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -142,7 +144,6 @@ def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
-
 
 @app.route("/absensi", methods=["POST"])
 def create_absensi():
@@ -164,7 +165,6 @@ def create_absensi():
         logger.error(f"Unexpected error during create_absensi: {e}")
         return jsonify({"message": "An unexpected error occurred", "error": str(e)}), 500
 
-
 @app.route("/absensi", methods=["GET"])
 def get_absensi():
     try:
@@ -182,7 +182,6 @@ def get_absensi():
     except Exception as e:
         logger.error(f"Unexpected error during get_absensi: {e}")
         return jsonify({"message": "Terjadi kesalahan tidak terduga", "error": str(e)}), 500
-
 
 @app.route('/absensi/<int:id>', methods=['PUT'])
 def update_absensi(id):
@@ -205,7 +204,6 @@ def update_absensi(id):
         logger.error(f"Unexpected error during update_absensi: {e}")
         return jsonify({'message': 'An unexpected error occurred', 'error': str(e)}), 500
 
-
 @app.route("/absensi/<int:id>", methods=["DELETE"])
 def delete_absensi(id):
     try:
@@ -224,7 +222,6 @@ def delete_absensi(id):
     except Exception as e:
         logger.error(f"Unexpected error during delete_absensi: {e}")
         return jsonify({"message": "An unexpected error occurred", "error": str(e)}), 500
-
 
 if __name__ == "__main__":
     if wait_for_database():
