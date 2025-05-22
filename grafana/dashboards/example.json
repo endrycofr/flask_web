@@ -636,7 +636,7 @@
               }
             ]
           },
-          "unit": "decmbytes"
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -671,8 +671,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "memory_usage_percent{job=\"app\"}",
+          "editorMode": "code",
+          "expr": "process_resident_memory_bytes{job='app'}",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -972,8 +972,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "disableTextWrap": false,
-          "editorMode": "builder",
-          "expr": "avg(process_cpu_seconds_total{job=\"app\"})",
+          "editorMode": "code",
+          "expr": "rate(process_cpu_seconds_total{job='app'}[30s])*100",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
