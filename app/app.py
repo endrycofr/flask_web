@@ -45,11 +45,17 @@ LATENCY_PERCENTILES = Histogram(
 CPU_USAGE = Gauge("cpu_usage_percent", "CPU usage percentage")
 MEMORY_USAGE = Gauge("memory_usage_percent", "Memory usage percentage")
 
-# Database Configuration
-db_uri = os.getenv(
-    "DB_URI",
-    "mysql+mysqlconnector://flask_user:password@mysql/flask_app_db",
-)
+# Ambil dari .env kalau ada, kalau tidak pakai default
+db_uri = os.getenv("DB_URI")
+if not db_uri:
+    # Build DB_URI dari variabel lain di .env
+    db_user = os.getenv("DB_USER", "flask_user")
+    db_password = os.getenv("DB_PASSWORD", "password")
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "3306")
+    db_name = os.getenv("DB_NAME", "flask_app_db")
+    db_uri = f"mysql+mysqlconnector://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
 app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
@@ -57,6 +63,7 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_pre_ping": True,
 }
 
+# Init database
 db = SQLAlchemy(app)
 
 # Timezone Configuration
