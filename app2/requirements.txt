@@ -1,0 +1,14 @@
+Flask
+Flask-SQLAlchemy
+SQLAlchemy
+mysql-connector-python
+prometheus-flask-exporter
+MarkupSafe
+prometheus_client
+flask-restful
+pytz
+requests
+psutil
+marshmallow
+python-dotenv
+gunicorn

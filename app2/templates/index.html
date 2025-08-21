@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Absensi App - API Tester</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.5.0/axios.min.js"></script>
+  </head>
+  <body>
+    <div class="container mt-5">
+      <h1 class="text-center">Absensi App - RESTful API Tester</h1>
+      <div class="mt-4">
+        <!-- Add Attendance (POST) -->
+        <h3>Tambah Absensi (POST)</h3>
+        <form id="add-form">
+          <div class="mb-3">
+            <label for="nrp" class="form-label">NRP:</label>
+            <input
+              type="text"
+              id="nrp"
+              class="form-control"
+              placeholder="Masukkan NRP"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="nama" class="form-label">Nama:</label>
+            <input
+              type="text"
+              id="nama"
+              class="form-control"
+              placeholder="Masukkan Nama"
+              required
+            />
+          </div>
+          <button type="button" class="btn btn-success" onclick="addAbsensi()">
+            Tambah
+          </button>
+        </form>
+
+        <hr />
+
+        <!-- Get Attendance (GET) -->
+        <h3>Lihat Semua Absensi (GET)</h3>
+        <button class="btn btn-primary" onclick="getAbsensi()">
+          Lihat Absensi
+        </button>
+        <pre id="get-response" class="mt-3 bg-light p-3 border"></pre>
+
+        <hr />
+
+        <!-- Update Attendance (PUT) -->
+        <h3>Perbarui Absensi (PUT)</h3>
+        <form id="update-form">
+          <div class="mb-3">
+            <label for="update-id" class="form-label">ID Absensi:</label>
+            <input
+              type="number"
+              id="update-id"
+              class="form-control"
+              placeholder="Masukkan ID"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="update-nrp" class="form-label">NRP:</label>
+            <input
+              type="text"
+              id="update-nrp"
+              class="form-control"
+              placeholder="Masukkan NRP baru"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label for="update-nama" class="form-label">Nama:</label>
+            <input
+              type="text"
+              id="update-nama"
+              class="form-control"
+              placeholder="Masukkan Nama baru"
+              required
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-warning"
+            onclick="updateAbsensi()"
+          >
+            Perbarui
+          </button>
+        </form>
+
+        <hr />
+
+        <!-- Delete Attendance (DELETE) -->
+        <h3>Hapus Absensi (DELETE)</h3>
+        <form id="delete-form">
+          <div class="mb-3">
+            <label for="delete-id" class="form-label">ID Absensi:</label>
+            <input
+              type="number"
+              id="delete-id"
+              class="form-control"
+              placeholder="Masukkan ID"
+              required
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn-danger"
+            onclick="deleteAbsensi()"
+          >
+            Hapus
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      const apiUrl = "/absensi";
+
+      // Improved error handling function
+      function handleApiError(error) {
+        const errorMessage = error.response
+          ? error.response.data.message ||
+            error.response.data.error ||
+            "Unknown Error"
+          : error.message;
+        console.error("API Error:", error);
+        alert(`Error: ${errorMessage}`);
+      }
+
+      // Add Absensi
+      async function addAbsensi() {
+        const nrp = document.getElementById("nrp").value;
+        const nama = document.getElementById("nama").value;
+
+        try {
+          const response = await axios.post(apiUrl, { nrp, nama });
+          alert("Absensi berhasil ditambahkan");
+          // Optional: Reset form or refresh data
+          document.getElementById("nrp").value = "";
+          document.getElementById("nama").value = "";
+          getAbsensi(); // Refresh the list
+        } catch (error) {
+          handleApiError(error);
+        }
+      }
+
+      // Get Absensi
+      async function getAbsensi() {
+        try {
+          const response = await axios.get(apiUrl);
+          document.getElementById("get-response").textContent = JSON.stringify(
+            response.data,
+            null,
+            2
+          );
+        } catch (error) {
+          handleApiError(error);
+        }
+      }
+
+      // Update Absensi
+      async function updateAbsensi() {
+        const id = document.getElementById("update-id").value;
+        const nrp = document.getElementById("update-nrp").value;
+        const nama = document.getElementById("update-nama").value;
+
+        // Only send fields that are not empty
+        const updateData = {};
+        if (nrp) updateData.nrp = nrp;
+        if (nama) updateData.nama = nama;
+
+        if (Object.keys(updateData).length === 0) {
+          alert("Minimal satu field (NRP atau Nama) harus diisi");
+          return;
+        }
+
+        try {
+          const response = await axios.put(`${apiUrl}/${id}`, updateData);
+          alert("Absensi berhasil diperbarui");
+          // Reset form fields
+          document.getElementById("update-id").value = "";
+          document.getElementById("update-nrp").value = "";
+          document.getElementById("update-nama").value = "";
+          getAbsensi(); // Refresh the list
+        } catch (error) {
+          handleApiError(error);
+        }
+      }
+
+      // Delete Absensi
+      async function deleteAbsensi() {
+        const id = document.getElementById("delete-id").value;
+
+        try {
+          const response = await axios.delete(`${apiUrl}/${id}`);
+          alert("Absensi berhasil dihapus");
+          // Reset delete form field
+          document.getElementById("delete-id").value = "";
+          getAbsensi(); // Refresh the list
+        } catch (error) {
+          handleApiError(error);
+        }
+      }
+
+      // Initial load of data
+      document.addEventListener("DOMContentLoaded", getAbsensi);
+    </script>
+  </body>
+</html>
