@@ -7,7 +7,3 @@ scrape_configs:
     static_configs:
       - targets:
           - "app:5000"
-
-  - job_name: "nginx"
-    static_configs:
-      - targets: ["nginx:8080"]
