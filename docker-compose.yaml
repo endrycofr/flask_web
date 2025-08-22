@@ -4,27 +4,29 @@ services:
       context: ./app1
     container_name: app1
     ports:
-      - "5000:5000"
+      - "5001:5000"
     env_file:
       - .env
     environment:
-      - APP_NUMBER=2
-      - DB_URI: "${DB_URI}"
+      APP_NUMBER: 1
+      DB_URI: "${DB_URI}"
     networks:
       - app_net
+
   app2:
     build:
       context: ./app2
     container_name: app2
     ports:
-      - "5000:5000"
+      - "5002:5000"
     env_file:
       - .env
     environment:
-      - APP_NUMBER=2
-      - DB_URI: "${DB_URI}"
+      APP_NUMBER: 2
+      DB_URI: "${DB_URI}"
     networks:
       - app_net
+
   nginx:
     image: nginx:latest
     container_name: nginx
