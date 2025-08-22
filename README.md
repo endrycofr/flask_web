@@ -15,7 +15,7 @@ Arsitektur proyek:
 [![Arsitektur Sistem](img/arsitektur.png)](img/arsitektur.png)
 
 Monitoring Dashboard:  
-[![Monitoring Dashboard](img/monitoring-dashboard.png)](img/monitoring-dashboard.png)
+[![Monitoring Dashboard](img/monitoring_dashboard.png)](img/monitoring_dashboard.png)
 
 ## 📂 1. Clone Repository
 
