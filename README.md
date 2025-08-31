@@ -12,7 +12,7 @@ Proyek ini adalah arsitektur menggunkan Load Balancing **Flask Web App** yang di
 ## 📊 Arsitektur Sistem
 
 Arsitektur proyek:  
-[![Arsitektur Sistem](img/arsitektur.png)](img/arsitektur.png)
+[![Arsitektur Sistem](img/arsitektur_cloud.png)](img/arsitektur_cloud.png)
 
 Monitoring Dashboard:  
 [![Monitoring Dashboard](img/monitoring_dashboard.png)](img/monitoring_dashboard.png)
